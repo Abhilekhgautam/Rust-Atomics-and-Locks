@@ -71,5 +71,13 @@ fn changed_main_three() {
     a_borrowed = 5;
     a.set(a_borrowed); // set a to a new value
 }
+// A RefCell<T> is similar to Cell<T> but it allows to borrow its content
+// Similar to Cell<T> it is not thread safe
+fn main() {
+    use std::cell::RefCell;
 
-fn main() {}
+    let a = RefCell::new(56);
+
+    // change the value
+    *a.borrow_mut() = 57;
+}
