@@ -118,7 +118,8 @@ fn changed_main_three() {
 }
 
 // Progress Reporting using mulitple threads.
-fn main() {
+#[allow(unused)]
+fn changed_main_four() {
     use std::sync::atomic::AtomicUsize;
 
     let num_done = &AtomicUsize::new(0);
@@ -126,7 +127,7 @@ fn main() {
     thread::scope(|s| {
         for t in 0..4 {
             s.spawn(move || {
-                for i in 0..100 {
+                for i in 0..25 {
                     process_item(t * 25 + i);
                     num_done.fetch_add(1, Relaxed);
                 }
@@ -140,6 +141,53 @@ fn main() {
                 }
                 println!("Under Progress: {n}/ 100");
             }
+        }
+    });
+    println!("Done");
+}
+
+// Showing Statistics:
+
+fn main() {
+    use std::sync::atomic::{AtomicU64, AtomicUsize};
+    use std::time::Instant;
+
+    let num_done = &AtomicUsize::new(0);
+    let total_time = &AtomicU64::new(0);
+    let max_time = &AtomicU64::new(0);
+
+    thread::scope(|s| {
+        for t in 0..4 {
+            s.spawn(move || {
+                for i in 0..25 {
+                    let start = Instant::now();
+                    process_item(t * 25 + i);
+                    let time_taken = start.elapsed().as_micros() as u64;
+                    num_done.fetch_add(1, Relaxed);
+                    total_time.fetch_add(1, Relaxed);
+                    max_time.fetch_max(time_taken, Relaxed);
+                }
+            });
+        }
+        // main thread displays the statistcs of the progress.
+        loop {
+            let total_time = Duration::from_micros(total_time.load(Relaxed));
+            let max_time = Duration::from_micros(max_time.load(Relaxed));
+            let n = num_done.load(Relaxed);
+
+            if n == 100 {
+                break;
+            }
+            if n == 0 {
+                println!("Working nothing done yet");
+            } else {
+                println!(
+                    "Progress.. {n}/100 done, {:?} average, {:?} peak",
+                    total_time / n as u32,
+                    max_time
+                );
+            }
+            thread::sleep(Duration::from_secs(1));
         }
     });
     println!("Done");
