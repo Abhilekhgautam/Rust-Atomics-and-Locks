@@ -11,6 +11,7 @@ use std::thread;
 #[allow(unused_imports)]
 use std::time::Duration;
 
+// probably the optimizer will throw this away.
 fn some_work() {
     for _ in 0..100 {
         // do nothing
@@ -55,7 +56,8 @@ fn process_item(_i: usize) {
 
 // Progress Reporting: We process 100 items one by one on a background_thread, while the main
 // thread gives the user regular updates on the progress.
-fn main() {
+#[allow(unused)]
+fn changed_main_two() {
     use std::sync::atomic::AtomicUsize;
     let num_done = AtomicUsize::new(0);
 
@@ -77,6 +79,67 @@ fn main() {
                 break;
             }
             println!("Under Progress: ... {}/100", n);
+            thread::sleep(Duration::from_secs(1));
+        }
+    });
+    println!("Done");
+}
+
+// Progress Reporting using thread parking.
+#[allow(unused)]
+fn changed_main_three() {
+    use std::sync::atomic::AtomicUsize;
+
+    let main_thread = thread::current();
+    let num_done = AtomicUsize::new(0);
+    thread::scope(|s| {
+        // process items one at a time
+        s.spawn(|| {
+            for i in 0..100 {
+                process_item(i);
+                num_done.store(i + 1, Relaxed);
+                main_thread.unpark(); // wake up the main thread
+            }
+        });
+
+        // this is the main thread
+        loop {
+            let n = num_done.load(Relaxed);
+            if n == 100 {
+                break;
+            }
+            println!("Progress: {n}/100");
+            // go to sleep
+            thread::park_timeout(Duration::from_millis(800));
+        }
+    });
+
+    println!("Done");
+}
+
+// Progress Reporting using mulitple threads.
+fn main() {
+    use std::sync::atomic::AtomicUsize;
+
+    let num_done = &AtomicUsize::new(0);
+
+    thread::scope(|s| {
+        for t in 0..4 {
+            s.spawn(move || {
+                for i in 0..100 {
+                    process_item(t * 25 + i);
+                    num_done.fetch_add(1, Relaxed);
+                }
+            });
+
+            // main thread displays progress
+            loop {
+                let n = num_done.load(Relaxed);
+                if n == 100 {
+                    break;
+                }
+                println!("Under Progress: {n}/ 100");
+            }
         }
     });
     println!("Done");
