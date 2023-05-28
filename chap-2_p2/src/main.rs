@@ -100,3 +100,24 @@ fn main() {
         }
     });
 }
+
+//Lazy One-Time Initialization
+//Consider a function like get_key() that returns a randomly generated key that's only generated
+//once per run of the program, which needs to be unique every time the program is run but needs to
+//stay constant within a process.
+#[allow(unused)]
+fn get_key() -> u32 {
+    static KEY: AtomicU32 = AtomicU32::new(0);
+    let id = KEY.load(Relaxed);
+    // if id is 0 it means this is the first call to the function after the program was run.
+    if id == 0 {
+        let new_value: u32 = id + 1; // could be any random number
+        match KEY.compare_exchange_weak(id, new_value, Relaxed, Relaxed) {
+            Ok(_) => return new_value,
+            // Some other thread has already generated the key, so just return the value.
+            Err(k) => k,
+        }
+    } else {
+        id
+    }
+}
