@@ -10,6 +10,7 @@
 // Compilers also reorder the instruction when it thinks that result in faster execution without
 // changing the behaviour of program.
 
+use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 /// ```rust
 /// fn f(a: &mut i32, b: &mut i32){
 ///    *a += 1;
@@ -71,8 +72,7 @@
 /// ```
 /// The basic happens-before rule applies within the thread i.e., op-1 is always executed before
 /// op-2 and op-3 is always executed before op-4
-use std::sync::atomic::AtomicI32;
-use std::sync::atomic::Ordering::Relaxed;
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64};
 use std::time::Duration;
 
 use std::thread;
@@ -147,10 +147,36 @@ fn a2() {
 
 // Even though there are 2 possible order, all the thread will stay consistent with a single order.
 // But the order can be any of 2, no one knows exactly which one.
-
-fn main() {
+#[allow(unused)]
+fn change_main_three() {
     thread::scope(|s| {
         s.spawn(a1);
         s.spawn(a2);
     })
+}
+
+// Release and Acquire Ordering
+static DATA: AtomicU64 = AtomicU64::new(0);
+static READY: AtomicBool = AtomicBool::new(false);
+
+// Release Memory Ordering applies to store.
+// Acquire Memory Ordering applies to load.
+
+// The Acquire-Release pair is used to form a happens-before relationship
+// Everything before the release-store (1) will be visible when true is loaded
+fn main() {
+    thread::spawn(|| {
+        DATA.store(123, Relaxed);
+        thread::sleep(Duration::from_secs(2));
+        READY.store(true, Release); // 1
+    });
+
+    // when READY.load(Acquire) returns true, this means that the other thread now
+    // know everything what happened before the store, in this case it now knows that
+    // 123 has been stored to  DATA.
+    while !READY.load(Acquire) {
+        thread::sleep(Duration::from_millis(100));
+        println!("Waiting");
+    }
+    println!("{}", DATA.load(Relaxed));
 }
