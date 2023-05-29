@@ -73,10 +73,12 @@
 /// op-2 and op-3 is always executed before op-4
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering::Relaxed;
-static X: AtomicI32 = AtomicI32::new(0);
-fn main() {
-    use std::thread;
+use std::time::Duration;
 
+use std::thread;
+static X: AtomicI32 = AtomicI32::new(0);
+#[allow(unused)]
+fn changed_main() {
     X.store(1, Relaxed);
     // spawning a thread creates a happens-before relationship between what happened before the
     // spawn() call and the new thread.
@@ -92,4 +94,63 @@ fn f() {
     let x = X.load(Relaxed);
     // this will never fail all thanks to happens-before relationship.
     assert!(x == 1 || x == 2);
+}
+
+// Relaxed Ordering: They don't provide any happens-before relationship, instead they just
+// guarantee modification order, with which every threads abide by.
+// Atomic Operations using relaxed memory ordering do not provide any happens-before relationship,
+// what this means is all modification of the same atomic variable happen in an order that is the
+// same from the perspective of all thread.
+
+static Y: AtomicI32 = AtomicI32::new(0);
+
+// Here only the fn a is modiying our atomic variable.
+// The order of modification is 0->5->15
+// Threads cannot see values that are inconsistent with this order.
+
+// Every thread will agree with the order 0->5->15.
+fn a() {
+    Y.fetch_add(5, Relaxed);
+    thread::sleep(Duration::from_millis(200));
+    Y.fetch_add(10, Relaxed);
+}
+
+fn b() {
+    let a = Y.load(Relaxed);
+    let b = Y.load(Relaxed);
+    thread::sleep(Duration::from_millis(200));
+    let c = Y.load(Relaxed);
+    let d = Y.load(Relaxed);
+
+    println!("{a} {b} {c} {d}");
+}
+#[allow(unused)]
+fn changed_main_two() {
+    thread::scope(|s| {
+        s.spawn(a);
+        s.spawn(b);
+    })
+}
+
+// now if we try to split the above function a into two functions:
+fn a1() {
+    Y.fetch_add(5, Relaxed);
+}
+
+fn a2() {
+    Y.fetch_add(10, Relaxed);
+}
+
+// now there are 2 modification order:
+// 0->5->15 or
+// 0->10->15
+
+// Even though there are 2 possible order, all the thread will stay consistent with a single order.
+// But the order can be any of 2, no one knows exactly which one.
+
+fn main() {
+    thread::scope(|s| {
+        s.spawn(a1);
+        s.spawn(a2);
+    })
 }
