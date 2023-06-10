@@ -164,7 +164,8 @@ static READY: AtomicBool = AtomicBool::new(false);
 
 // The Acquire-Release pair is used to form a happens-before relationship
 // Everything before the release-store (1) will be visible when true is loaded
-fn main() {
+#[allow(unused)]
+fn changed_main_three() {
     thread::spawn(|| {
         DATA.store(123, Relaxed);
         thread::sleep(Duration::from_secs(2));
@@ -179,4 +180,24 @@ fn main() {
         println!("Waiting");
     }
     println!("{}", DATA.load(Relaxed));
+}
+
+// acquire release even let us do that thing for non atomic variable.
+static mut MY_DATA: u64 = 0;
+
+fn main() {
+    thread::spawn(|| {
+        //Safety: Nothing else is accessing MY_DATA.
+        unsafe {
+            MY_DATA = 123;
+        }
+        READY.store(true, Release);
+    });
+
+    while !READY.load(Acquire) {
+        thread::sleep(Duration::from_millis(1000));
+        println!("Waiting...");
+    }
+
+    println!("{}", unsafe { MY_DATA });
 }
