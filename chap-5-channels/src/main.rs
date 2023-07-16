@@ -47,31 +47,68 @@ impl<T> Channel<T> {
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit; // unsafe Option<T>
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering::Release;
+use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
+use std::thread;
 
 pub struct Channel<T> {
     message: UnsafeCell<MaybeUninit<T>>,
     ready: AtomicBool,
+    in_use: AtomicBool,
 }
 
 unsafe impl<T> Sync for Channel<T> where T: Send {}
+impl<T> Drop for Channel<T> {
+    fn drop(&mut self) {
+        if *self.ready.get_mut() {
+            unsafe { self.message.get_mut().assume_init_drop() }
+        }
+    }
+}
 
 impl<T> Channel<T> {
     fn new() -> Self {
         Self {
             message: UnsafeCell::new(MaybeUninit::uninit()),
             ready: AtomicBool::new(false),
+            in_use: AtomicBool::new(false),
         }
     }
 
-    pub unsafe fn send(&self, value: T) {
-        let v = (*self.message.get()).write(value);
+    pub fn send(&self, value: T) {
+        if self.in_use.swap(true, Relaxed) {
+            panic!("Can't send more than one message");
+        }
+
+        unsafe { (*self.message.get()).write(value) };
         self.ready.store(true, Release);
     }
 
     pub fn is_ready(&self) -> bool {
-        todo!();
+        self.ready.load(Relaxed)
+    }
+
+    pub fn recieve(&self) -> T {
+        if !self.ready.swap(false, Acquire) {
+            panic!("No Message Available");
+        }
+        // Safety: We already reset the ready flag
+        unsafe { (*self.message.get()).assume_init_read() }
     }
 }
 
-fn main() {}
+fn main() {
+    let chan = Channel::new();
+    let t = thread::current();
+
+    thread::scope(|s| {
+        s.spawn(|| {
+            chan.send("Hello, World");
+            t.unpark();
+        });
+
+        if !chan.is_ready() {
+            thread::park();
+        }
+        assert_eq!(chan.recieve(), "Hello, World");
+    });
+}
